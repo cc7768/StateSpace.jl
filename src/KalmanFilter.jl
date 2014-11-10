@@ -83,10 +83,10 @@ function filter{T}(y::Array{T}, m::LinearGaussianSSM{T}, x0::GenericMvNormal)
 			x_filtered[i] = x_pred
 		else
 			x_filtered[i] = update(m, x_pred, y[:, i])
-			loglik += log(pdf(observe(m, x_filtered[i]), y[:, i]))
+			loglik += logpdf(observe(m, x_filtered[i]), y[:, i])
 		end
 		# this may not be right...double check definition
-		loglik += log(pdf(x_pred, mean(x_filtered[i])))
+		loglik += logpdf(x_pred, mean(x_filtered[i]))
 	end
 	return FilteredState(y, x_filtered, loglik)
 end
