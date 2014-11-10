@@ -17,7 +17,7 @@ type LinearGaussianSSM{T}
 	end
 end
 
-function LinearGaussianSSM{T <: Real}(F::Matrix{T}, V::Matrix{T}, G::Matrix{T}, 
+function LinearGaussianSSM{T <: Real}(F::Matrix{T}, V::Matrix{T}, G::Matrix{T},
 		W::Matrix{T})
 	return LinearGaussianSSM{T}(F, V, G, W)
 end
@@ -98,7 +98,7 @@ end
 function simulate{T}(m::LinearGaussianSSM{T}, n::Int64, x0::GenericMvNormal)
 	x = zeros(T, length(x0), n)
 	y = zeros(T, size(m.G, 1), n)
-	x[:, 1] = rand(MvNormal(m.F * mean(x0), m.V))
+	x[:, 1] = rand(MvNormal(m.F * rand(x0), m.V))
 	y[:, 1] = rand(MvNormal(m.G * x[:, 1], m.W))
 	for i in 2:n
 		x[:, i] = rand(MvNormal(m.F * x[:, i-1], m.V))
