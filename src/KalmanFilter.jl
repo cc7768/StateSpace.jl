@@ -50,7 +50,7 @@ function predict(m::LinearGaussianSSM, x::GenericMvNormal)
 end
 
 function observe(m::LinearGaussianSSM, x::GenericMvNormal)
-    return MvNormal(m.G * mean(x), m.G * cov(pred) * m.G' + m.W)
+    return MvNormal(m.G * mean(x), m.G * cov(x) * m.G' + m.W)
 end
 
 function update(m::LinearGaussianSSM, pred::GenericMvNormal, y)
@@ -62,6 +62,16 @@ function update(m::LinearGaussianSSM, pred::GenericMvNormal, y)
     return MvNormal(mean_update, cov_update)
 end
 
+function update(m::LinearGaussianSSM, xpred::GenericMvNormal,
+                ypred::GenericMvNormal, y)
+    innovation = y - mean(ypred)
+    innovation_cov = cov(ypred)
+    K = cov(xpred) * m.G' * inv(innovation_cov)
+    mean_update = mean(xpred) + K * innovation
+    cov_update = (eye(cov(xpred)) - K * m.G) * cov(xpred)
+    return MvNormal(mean_update, cov_update)
+end
+
 function update!(m::LinearGaussianSSM, fs::FilteredState, y)
     x_pred = predict(m, fs.state_dist[end])
     x_filt = update(m, x_pred, y)
@@ -70,25 +80,44 @@ function update!(m::LinearGaussianSSM, fs::FilteredState, y)
     return fs
 end
 
-
 function filter{T}(y::Array{T}, m::LinearGaussianSSM{T}, x0::GenericMvNormal)
-    x_filtered = Array(GenericMvNormal, size(y, 2))
+    # Initial Parameters and Allocate Space
+    ysize = size(y, 2)
     loglik = 0.
+    x_filtered = Array(GenericMvNormal, ysize)
+
+    # Kalman Filter
     x_pred = predict(m, x0)
-    x_filtered[1] = update(m, x_pred, y[:, 1])
-    for i in 2:size(y, 2)
+    y_pred = observe(m, x_pred)
+    loglik += logpdf(y_pred, y[:, 1] - mean(y_pred))
+    x_filtered[1] = update(m, x_pred, y_pred, y[:, 1])
+
+    for i in 2:ysize
         x_pred = predict(m, x_filtered[i-1])
+        y_pred = observe(m, x_pred)
         # Check for missing values in observation
-        if any(isnan(y[:, i]))
+        if any(isnan, y[:, i])
+            # The replacenan function is a quick fix.  Should decide on
+            # future convention to make this better.
+            ytwiddly = replacenan(y[:, i], mean(y_pred))
+            loglik += logpdf(y_pred, ytwiddly)
             x_filtered[i] = x_pred
         else
+            loglik += logpdf(y_pred, y[:, i])
             x_filtered[i] = update(m, x_pred, y[:, i])
-            loglik += logpdf(observe(m, x_filtered[i]), y[:, i])
         end
-        # this may not be right...double check definition
-        loglik += logpdf(x_pred, mean(x_filtered[i]))
     end
     return FilteredState(y, x_filtered, loglik)
+end
+
+function replacenan(x::Array, replacement::Array)
+    nrow = size(x, 1)
+    newx = copy(x)
+    for i=1:nrow
+        newx[i] = isnan(x[i])?replacement[i]:x[i]
+    end
+
+    return newx
 end
 
 function smooth{T}(m::LinearGaussianSSM{T}, fs::FilteredState{T})
