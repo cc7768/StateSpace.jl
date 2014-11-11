@@ -85,51 +85,87 @@ function filter{T}(y::Array{T}, m::LinearGaussianSSM{T}, x0::GenericMvNormal)
     ysize = size(y, 2)
     loglik = 0.
     x_filtered = Array(GenericMvNormal, ysize)
+    x_pred = Array(GenericMvNormal, ysize)
 
     # Kalman Filter
-    x_pred = predict(m, x0)
-    y_pred = observe(m, x_pred)
+    x_pred[1] = predict(m, x0)
+    y_pred = observe(m, x_pred[1])
     loglik += logpdf(y_pred, y[:, 1] - mean(y_pred))
-    x_filtered[1] = update(m, x_pred, y_pred, y[:, 1])
+    x_filtered[1] = update(m, x_pred[1], y_pred, y[:, 1])
 
     for i in 2:ysize
-        x_pred = predict(m, x_filtered[i-1])
-        y_pred = observe(m, x_pred)
+        x_pred[i] = predict(m, x_filtered[i-1])
+        y_pred = observe(m, x_pred[i])
         # Check for missing values in observation
         if any(isnan, y[:, i])
             # The replacenan function is a quick fix.  Should decide on
             # future convention to make this better.
             ytwiddly = replacenan(y[:, i], mean(y_pred))
             loglik += logpdf(y_pred, ytwiddly)
-            x_filtered[i] = x_pred
+            x_filtered[i] = x_pred[i]
         else
             loglik += logpdf(y_pred, y[:, i])
-            x_filtered[i] = update(m, x_pred, y[:, i])
+            x_filtered[i] = update(m, x_pred[i], y[:, i])
         end
     end
-    return FilteredState(y, x_filtered, loglik)
+    return FilteredState(y, x_filtered, x_pred, loglik)
 end
 
-function replacenan(x::Array, replacement::Array)
-    nrow = size(x, 1)
-    newx = copy(x)
-    for i=1:nrow
-        newx[i] = isnan(x[i])?replacement[i]:x[i]
+# TODO: should this function return the samples, or the distributions?
+#       I kinda think it should return distributions. Need to think about it
+function bw_sampler(fs::FilteredState)
+    # pull out necessary objects
+    y, filt, pred = fs.observations, fs.state_dist, fs.pred_state
+    ns = size(y, 2)   # number of samples
+    nx = filt[1].dim  # number of states
+
+    # allocate space for samples
+    x_sample = Array(Float64, nx, ns)
+
+    # first (well, actually last) sample
+    x_sample[:, end] = rand(filt[end])
+
+    # iterate backward for rest of samples
+    for t=ns-1:-1:1
+        # pull out sufficient stats
+        xt_t, pt_t = mean(filt[t]), cov(filt[t])
+        ptp1_t_inv = inv(cov(pred[t+1]))
+
+        # x_{t|t+1} = x_{t|t} + P_{t|t}P_{t+1|t}^{-1}(x_{t+1} - x_{t|t})
+        xt_tp1 = xt_t + pt_t*ptp1_t_inv*(y[:, t+1]- xt_t)
+
+        # P_{t|t+1} = P_{t|t} - P_{t|t}P_{t+1|t}^{-1}P_{t|t}
+        pt_tp1 = pt_t - pt_t'ptp1_t_inv*pt_t
+
+        # construct distribution and sample
+        new_dist = MvNormal(xt_tp1, pt_tp1)
+        x_sample[:, t] = rand(new_dist)
     end
-
-    return newx
+    return x_sample
 end
+
+
+function fwbw_sampler{T}(y::Array{T}, m::LinearGaussianSSM{T},
+                        x0::GenericMvNormal)
+    return bw_sampler(filter(y, m, x0))
+end
+
 
 function smooth{T}(m::LinearGaussianSSM{T}, fs::FilteredState{T})
-	# Withdraw and Use Parameters
-	y = fs.y
-	ysize = size(y, 2)
-	x_filtered = fs.x_filtered
-	x_smoothed = Array(GenericMvNormal, ysize)
+    # Uses RauchTung-Striebel Algorithm to smooth: See wiki
+    # Withdraw and Use Parameters
+    y = fs.y
+    ysize = size(y, 2)
+    x_filtered = fs.state_dist
+    x_pred = fs.pred_state
+    x_smoothed = Array(GenericMvNormal, ysize)
+    x_smoothed[end] = x_filtered[end]
 
-	# Smooth this baby out
-	for t=ysize:1
-		nothing
+    # Smooth States
+    for t=ysize:-1:1
+        C = cov(x_filtered[t])m.F'inv(mean(x_pred[t+1]))
+        newmean = mean(x_filtered[t]) +
+       x_smoothed[t]
 	end
     error("Not implemented yet")
 end

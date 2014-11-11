@@ -4,19 +4,22 @@ import Base: mean, filter, show
 
 
 export
+    FilteredState,
     LinearGaussianSSM,
     NonlinearGaussianSSM,
-    FilteredState,
-    show,
-    predict,
-    observe,
-    update,
-    update!,
+    bw_sampler,
     filter,
-    simulate
+    fwbw_sampler,
+    observe,
+    predict,
+    show,
+    simulate,
+    update!,
+    update
 
+include("util.jl")
 include("common.jl")
-include("KalmanFilter.jl")
 include("ExtendedKalmanFilter.jl")
+include("KalmanFilter.jl")
 
 end # module
