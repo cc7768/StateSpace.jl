@@ -121,7 +121,21 @@ function replacenan(x::Array, replacement::Array)
 end
 
 function smooth{T}(m::LinearGaussianSSM{T}, fs::FilteredState{T})
+	# Withdraw and Use Parameters
+	y = fs.y
+	x_filtered = fs.x_filtered
+	ysize = size(y, 2)
+
+	# Smooth this baby out
+	for t=ysize:1
+
+	end
     error("Not implemented yet")
+end
+
+function smooth{T}(y::Array{T}, m::LinearGaussianSSM, x0::GenericMvNormal)
+	fs = filter(y, m, x0)
+	return smooth(m, fs)
 end
 
 function simulate{T}(m::LinearGaussianSSM{T}, n::Int64, x0::GenericMvNormal)
