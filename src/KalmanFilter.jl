@@ -123,12 +123,13 @@ end
 function smooth{T}(m::LinearGaussianSSM{T}, fs::FilteredState{T})
 	# Withdraw and Use Parameters
 	y = fs.y
-	x_filtered = fs.x_filtered
 	ysize = size(y, 2)
+	x_filtered = fs.x_filtered
+	x_smoothed = Array(GenericMvNormal, ysize)
 
 	# Smooth this baby out
 	for t=ysize:1
-
+		nothing
 	end
     error("Not implemented yet")
 end
