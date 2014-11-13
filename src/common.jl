@@ -70,60 +70,63 @@ function any_gaps(r1::UnitRange, rs::UnitRange...)
     return false
 end
 
-type TimeVaryingParam{T<:Real, S<:Integer}
-    mats::Vector{Matrix{T}}
+type TimeVaryingParam{T, S<:Integer}
+    vals::Vector{T}
     ranges::Vector{UnitRange{S}}
 
-    function TimeVaryingParam(mats, ranges)
+    function TimeVaryingParam(vals, ranges)
         if !(all_disjoint(ranges...))
             throw(ArugumentError("Ranges are overlapping"))
         end
-        if length(mats) != length(ranges)
-            throw(ArugumentError("Must supply same number of mats and ranges"))
+
+        if length(vals) != length(ranges)
+            throw(ArugumentError("Must supply same number of vals and ranges"))
         end
+
         if any_gaps(ranges...)
             throw(ArugumentError("Ranges contain missing periods"))
         end
-        new(mats, ranges)
+
+        # at this point I think we are good!
+        new(vals, ranges)
     end
 end
 
-function TimeVaryingParam{T<:Real, S<:Integer}(mats::Vector{Matrix{T}},
-                                               ranges::Vector{UnitRange{S}})
-    TimeVaryingParam{T, S}(mats, ranges)
+function TimeVaryingParam{T, S<:Integer}(vals::Vector{T},
+                                         ranges::Vector{UnitRange{S}})
+    TimeVaryingParam{T, S}(vals, ranges)
 end
 
 # constructor of the form (mat, period_range), (mat2, period_range2)
-function TimeVaryingParam{T<:Real, S<:Integer}(input::(Matrix{T}, UnitRange{S})...)
-    mats = Matrix{T}[]
+function TimeVaryingParam{T, S<:Integer}(input::(T, UnitRange{S})...)
+    vals = T[]
     ranges = UnitRange{S}[]
     for t in input
-        push!(mats, t[1])
+        push!(vals, t[1])
         push!(ranges, t[2])
     end
-    TimeVaryingParam(mats, ranges)
+    TimeVaryingParam(vals, ranges)
 end
 
 function getindex(tvp::TimeVaryingParam, t::Int)
     # if there is only one matrix, return that for all t.
-    if length(tvp.mats) == 1
-        return tvp.mats[1]
+    if length(tvp.vals) == 1
+        return tvp.vals[1]
     end
 
     # b/c all ranges are disjoint, ind has exactly zero or one elements
     ind = find(x->t in x, tvp.ranges)
     isempty(ind) && error("Invalid index. t=$t not in any supplied ranges")
-    return tvp.mats[ind[1]]
+    return tvp.vals[ind[1]]
 end
 
-function convert(::Type{TimeVaryingParam}, x::Matrix)
-    TimeVaryingParam((x, 1:typemax(1)))
-end
+# catch all for making the single item always returned by getindex
+convert(::Type{TimeVaryingParam}, x) = TimeVaryingParam((x, 1:typemax(1)))
 convert(::Type{TimeVaryingParam}, x::TimeVaryingParam) = x
 
-function show(io::IO, tvp::TimeVaryingParam)
-    n = length(tvp.mats)
-    msg = "TimeVaryingParam with $n different matrices"
+function show{T}(io::IO, tvp::TimeVaryingParam{T})
+    n = length(tvp.vals)
+    msg = "TimeVaryingParam with $n different params of type $T"
     print(io, msg)
     nothing
 end
