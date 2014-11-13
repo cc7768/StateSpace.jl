@@ -1,15 +1,19 @@
 module StateSpace
 
-import Base: mean, filter, show
+import Base: mean, filter, show, convert
 
 
 export
+    # types
     FilteredState,
     LinearGaussianSSM,
     NonlinearGaussianSSM,
+    TimeVaryingParam,
+
+    # functions
     bw_sampler,
     filter,
-    fwbw_sampler,
+    fwfilter_bwsampler,
     observe,
     predict,
     show,
@@ -17,8 +21,9 @@ export
     update!,
     update
 
-include("util.jl")
 include("common.jl")
+include("util.jl")
+include("models/linear_gaussian.jl")
 include("ExtendedKalmanFilter.jl")
 include("KalmanFilter.jl")
 
