@@ -2,15 +2,15 @@
 #- Core Methods -#
 ## ------------ ##
 
-function predict(m::LinearGaussianSSM, x::GenericMvNormal, t::Int)
+function predict(m::LinearGaussianSSM, x::MvNormal, t::Int)
     return MvNormal(m.F[t] * mean(x), m.F[t] * cov(x) * m.F[t]' + m.V[t])
 end
 
-function observe(m::LinearGaussianSSM, x::GenericMvNormal, t::Int)
+function observe(m::LinearGaussianSSM, x::MvNormal, t::Int)
     return MvNormal(m.G[t] * mean(x), m.G[t] * cov(x) * m.G[t]' + m.W[t])
 end
 
-function update(m::LinearGaussianSSM, pred::GenericMvNormal, y, t::Int)
+function update(m::LinearGaussianSSM, pred::MvNormal, y, t::Int)
     innovation = y - m.G[t] * mean(pred)
     innovation_cov = m.G[t] * cov(pred) * m.G[t]' + m.W[t]
     K = cov(pred) * m.G[t]' * inv(innovation_cov)
@@ -19,8 +19,8 @@ function update(m::LinearGaussianSSM, pred::GenericMvNormal, y, t::Int)
     return MvNormal(mean_update, cov_update)
 end
 
-function update(m::LinearGaussianSSM, xpred::GenericMvNormal,
-                ypred::GenericMvNormal, y, t::Int)
+function update(m::LinearGaussianSSM, xpred::MvNormal,
+                ypred::MvNormal, y, t::Int)
     innovation = y - mean(ypred)
     innovation_cov = cov(ypred)
     K = cov(xpred) * m.G[t]' * inv(innovation_cov)
@@ -40,12 +40,12 @@ function update!(m::LinearGaussianSSM, fs::FilteredState, y, t::Int)
     return fs
 end
 
-function filter(y::Array, m::LinearGaussianSSM, x0::GenericMvNormal)
+function filter(y::Array, m::LinearGaussianSSM, x0::MvNormal)
     # Initial Parameters and Allocate Space
     ysize = size(y, 2)
     loglik = 0.
-    x_filtered = Array(GenericMvNormal, ysize)
-    x_pred = Array(GenericMvNormal, ysize)
+    x_filtered = Array(MvNormal, ysize)
+    x_pred = Array(MvNormal, ysize)
 
     # Kalman Filter
     x_pred[1] = predict(m, x0, 1)
@@ -106,7 +106,7 @@ end
 
 
 function fwfilter_bwsampler(y::Array, m::LinearGaussianSSM,
-                      x0::GenericMvNormal)
+                      x0::MvNormal)
     return bw_sampler(filter(y, m, x0))
 end
 
@@ -118,7 +118,7 @@ function smooth(m::LinearGaussianSSM, fs::FilteredState)
     ysize = size(y, 2)
     x_filtered = fs.state_dist
     x_pred = fs.pred_state
-    x_smoothed = Array(GenericMvNormal, ysize)
+    x_smoothed = Array(MvNormal, ysize)
     x_smoothed[end] = x_filtered[end]
 
     error("Not implemented yet")
@@ -131,22 +131,7 @@ function smooth(m::LinearGaussianSSM, fs::FilteredState)
     end
 end
 
-function smooth(y::Array, m::LinearGaussianSSM, x0::GenericMvNormal)
+function smooth(y::Array, m::LinearGaussianSSM, x0::MvNormal)
 	fs = filter(y, m, x0)
 	return smooth(m, fs)
 end
-
-function simulate(m::LinearGaussianSSM, n::Int64, x0::GenericMvNormal)
-    # NOTE: this code will only work when x_t and y_t have the same dimension
-    #       for all time periods
-    x = zeros(Float64, length(x0), n)
-    y = zeros(Float64, size(m.G[1], 1), n)
-    x[:, 1] = rand(MvNormal(m.F[1] * rand(x0), m.V[1]))
-    y[:, 1] = rand(MvNormal(m.G[1] * x[:, 1], m.W[1]))
-    for t=2:n
-        x[:, t] = rand(MvNormal(m.F[t] * x[:, t-1], m.V[t]))
-        y[:, t] = rand(MvNormal(m.G[t] * x[:, t], m.W[t]))
-    end
-    return (x, y)
-end
-

@@ -8,5 +8,5 @@ function replacenan(x::Array, replacement::Array)
     return newx
 end
 
-issquare(x::Matrix) = size(x, 1) == size(x, 2)
+issquare(x::AbstractMatrix) = size(x, 1) == size(x, 2)
 issquare(t::TimeVaryingParam) = all(map(issquare), t.mats)
