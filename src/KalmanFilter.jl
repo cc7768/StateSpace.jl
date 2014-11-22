@@ -42,10 +42,10 @@ end
 
 function filter(y::Array, m::LinearGaussianSSM, x0::MvNormal)
     # Initial Parameters and Allocate Space
-    ysize = size(y, 2)
+    T = size(y, 2)
     loglik = 0.
-    x_filtered = Array(MvNormal, ysize)
-    x_pred = Array(MvNormal, ysize)
+    x_filtered = Array(MvNormal, T)
+    x_pred = Array(MvNormal, T)
 
     # Kalman Filter
     x_pred[1] = predict(m, x0, 1)
@@ -53,7 +53,7 @@ function filter(y::Array, m::LinearGaussianSSM, x0::MvNormal)
     loglik += logpdf(y_pred, y[:, 1] - mean(y_pred))
     x_filtered[1] = update(m, x_pred[1], y_pred, y[:, 1], 1)
 
-    for i in 2:ysize
+    for i in 2:T
         x_pred[i] = predict(m, x_filtered[i-1], i)
         y_pred = observe(m, x_pred[i], i)
         # Check for missing values in observation
@@ -75,24 +75,24 @@ end
 #       I kinda think it should return distributions. Need to think about it
 function bw_sampler(fs::FilteredState)
     # pull out necessary objects
-    y, filt, pred = fs.observations, fs.state_dist, fs.pred_state
-    ns = size(y, 2)   # number of samples
-    nx = filt[1].dim  # number of states
+    filt, pred = fs.state_dist, fs.pred_state
+    T = length(filt)      # number of samples
+    ns = length(filt[1])  # number of states
 
     # allocate space for samples
-    x_sample = Array(Float64, nx, ns)
+    x_sample = Array(Float64, ns, T)
 
     # first (well, actually last) sample
     x_sample[:, end] = rand(filt[end])
 
     # iterate backward for rest of samples
-    for t=ns-1:-1:1
+    for t=T-1:-1:1
         # pull out sufficient stats
         xt_t, pt_t = mean(filt[t]), cov(filt[t])
-        ptp1_t_inv = inv(cov(pred[t+1]))
+        ptp1_t_inv = inv(cov(pred[t+1]))  # CHASE: Check this index please
 
         # x_{t|t+1} = x_{t|t} + P_{t|t}P_{t+1|t}^{-1}(x_{t+1} - x_{t|t})
-        xt_tp1 = xt_t + pt_t*ptp1_t_inv*(y[:, t+1]- xt_t)
+        xt_tp1 = xt_t + pt_t*ptp1_t_inv*(x_sample[:, t+1] - xt_t)
 
         # P_{t|t+1} = P_{t|t} - P_{t|t}P_{t+1|t}^{-1}P_{t|t}
         pt_tp1 = pt_t - pt_t'ptp1_t_inv*pt_t
@@ -105,8 +105,8 @@ function bw_sampler(fs::FilteredState)
 end
 
 
-function fwfilter_bwsampler(y::Array, m::LinearGaussianSSM,
-                      x0::MvNormal)
+function fwfilter_bwsampler(y::Union(Array, TimeVaryingParam), m::LinearGaussianSSM,
+                            x0::MvNormal)
     return bw_sampler(filter(y, m, x0))
 end
 
@@ -115,16 +115,16 @@ function smooth(m::LinearGaussianSSM, fs::FilteredState)
     # Uses RauchTung-Striebel Algorithm to smooth: See wiki
     # Withdraw and Use Parameters
     y = fs.y
-    ysize = size(y, 2)
+    T = size(y, 2)
     x_filtered = fs.state_dist
     x_pred = fs.pred_state
-    x_smoothed = Array(MvNormal, ysize)
+    x_smoothed = Array(MvNormal, T)
     x_smoothed[end] = x_filtered[end]
 
     error("Not implemented yet")
 
     # Smooth States
-    for t=ysize:-1:1
+    for t=T:-1:1
         C = cov(x_filtered[t])m.F[t]'inv(mean(x_pred[t+1]))
         newmean = mean(x_filtered[t]) +
        x_smoothed[t]

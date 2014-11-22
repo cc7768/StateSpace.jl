@@ -9,4 +9,4 @@ function replacenan(x::Array, replacement::Array)
 end
 
 issquare(x::AbstractMatrix) = size(x, 1) == size(x, 2)
-issquare(t::TimeVaryingParam) = all(map(issquare), t.mats)
+issquare(t::TimeVaryingParam) = all(map(x->issquare(x), t.vals))

@@ -1,42 +1,3 @@
-using Distributions
-
-import Distributions: mean, var, cov, rand
-
-## -------------- ##
-#- Filtered State -#
-## -------------- ##
-
-type FilteredState{T, D<:ContinuousMultivariateDistribution}
-    observations::Array{T, 2}
-    state_dist::Array{D}
-    pred_state::Array{D}
-    loglik::T
-end
-
-function show(io::IO, fs::FilteredState)
-    n = length(fs.state_dist)
-    dobs = size(fs.observations, 1)
-    dstate = length(fs.state_dist[1])
-    msg = "FilteredState\n"
-    msg *= "  - $n estimates of $dstate-D process from $dobs-D observations\n"
-    msg *= "  - Log-likelihood: $(fs.loglik)"
-    print(io, msg)
-    nothing
-end
-
-for op in (:mean, :var, :cov, :cor, :rand)
-    @eval begin
-        function ($op){T}(s::FilteredState{T})
-            result = Array(T, length(s.state_dist[1]), length(s.state_dist))
-            for i in 1:length(s.state_dist)
-                result[:, i] = ($op)(s.state_dist[i])
-            end
-            return result
-        end
-    end
-end
-
-
 ## ---------------- ##
 #- TimeVaryingParam -#
 ## ---------------- ##
@@ -65,7 +26,7 @@ function any_gaps(r1::UnitRange, rs::UnitRange...)
     n = length(rs)
     !(adjacent(r1, rs[1])) && return true
     for i=1:n-1
-        !(adjacent(rs[i], rs[i+i])) && return true
+        !(adjacent(rs[i], rs[i+1])) && return true
     end
     return false
 end
@@ -76,15 +37,15 @@ type TimeVaryingParam{T, S<:Integer}
 
     function TimeVaryingParam(vals, ranges)
         if !(all_disjoint(ranges...))
-            throw(ArugumentError("Ranges are overlapping"))
+            throw(ArgumentError("Ranges are overlapping"))
         end
 
         if length(vals) != length(ranges)
-            throw(ArugumentError("Must supply same number of vals and ranges"))
+            throw(ArgumentError("Must supply same number of vals and ranges"))
         end
 
         if any_gaps(ranges...)
-            throw(ArugumentError("Ranges contain missing periods"))
+            throw(ArgumentError("Ranges contain missing periods"))
         end
 
         # at this point I think we are good!
@@ -108,8 +69,11 @@ function TimeVaryingParam{T, S<:Integer}(input::(T, UnitRange{S})...)
     TimeVaryingParam(vals, ranges)
 end
 
+# constructor for single item to be repeated on range 1:T
+TimeVaryingParam(x, T::Int) = TimeVaryingParam((x, 1:T))
+
 function getindex(tvp::TimeVaryingParam, t::Int)
-    # if there is only one matrix, return that for all t.
+    # if there is only one value, return that for all t.
     if length(tvp.vals) == 1
         return tvp.vals[1]
     end
@@ -120,6 +84,8 @@ function getindex(tvp::TimeVaryingParam, t::Int)
     return tvp.vals[ind[1]]
 end
 
+length(t::TimeVaryingParam) = sum([length(r) for r in t.ranges])
+
 # catch all for making the single item always returned by getindex
 convert(::Type{TimeVaryingParam}, x) = TimeVaryingParam((x, 1:typemax(1)))
 convert(::Type{TimeVaryingParam}, x::TimeVaryingParam) = x
@@ -129,4 +95,48 @@ function show{T}(io::IO, tvp::TimeVaryingParam{T})
     msg = "TimeVaryingParam with $n different params of type $T"
     print(io, msg)
     nothing
+end
+
+
+# helper functions to retrieve elements from TimeVaryingParam or matrix in
+# consistent way
+_get_yt(y::AbstractMatrix, t::Int) = y[:, t]
+_get_yt(y::TimeVaryingParam, t) = y[t]
+
+_get_T(y::AbstractMatrix) = size(y, 2)
+_get_T(y::TimeVaryingParam) = length(y)
+
+
+## -------------- ##
+#- Filtered State -#
+## -------------- ##
+
+type FilteredState{T, D<:ContinuousMultivariateDistribution}
+    observations::Union(Array{T, 2}, TimeVaryingParam{Array{T, 1}})
+    state_dist::Array{D}
+    pred_state::Array{D}
+    loglik::T
+end
+
+function show(io::IO, fs::FilteredState)
+    n = length(fs.state_dist)
+    dobs = size(fs.observations, 1)
+    dstate = length(fs.state_dist[1])
+    msg = "FilteredState\n"
+    msg *= "  - $n estimates of $dstate-D process from $dobs-D observations\n"
+    msg *= "  - Log-likelihood: $(fs.loglik)"
+    print(io, msg)
+    nothing
+end
+
+for op in (:mean, :var, :cov, :cor, :rand)
+    @eval begin
+        function ($op){T}(s::FilteredState{T})
+            result = Array(T, length(s.state_dist[1]), length(s.state_dist))
+            for i in 1:length(s.state_dist)
+                result[:, i] = ($op)(s.state_dist[i])
+            end
+            return result
+        end
+    end
 end

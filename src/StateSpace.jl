@@ -1,6 +1,9 @@
 module StateSpace
 
-import Base: mean, filter, show, convert, getindex
+using Distributions
+
+import Base: mean, filter, show, convert, getindex, length
+import Distributions: mean, var, cov, rand
 
 
 export

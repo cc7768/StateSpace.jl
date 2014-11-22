@@ -2,8 +2,8 @@ using StateSpace
 using Distributions
 
 # read in python data
-const y = readdlm("/Users/grantlyon/Spencer/temp/y.csv", ',')
-const ll_py = -223.02877677509935
+# const y = readdlm("/Users/grantlyon/Spencer/temp/y.csv", ',')
+# const ll_py = -223.02877677509935
 
 const N = 2
 
@@ -19,6 +19,10 @@ const x0_dist = MvNormal(ones(N), 0.1 .* eye(N))
 
 # construct state space
 const lgs = LinearGaussianSSabcd(A, B, C, D)
+
+x, y = simulate(lgs, 100, x0_dist)
+
+ks = kfilter(lgs, y, x0_dist);
 
 function test_kfilter()
     # run once to warm up
