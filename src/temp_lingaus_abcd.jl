@@ -17,10 +17,14 @@ type LinearGaussianSSabcd
                                   D::Union(TimeVaryingParam, AbstractMatrix))
         @assert issquare(A)
         @assert issquare(D)
-        @assert size(A, 1) == size(B, 1)
-        @assert size(C, 1) == size(D, 1)
-        @assert size(C, 2) == size(A, 1)
+
+        # convert to TimeVaryingParam
         A, B, C, D = map(x->convert(TimeVaryingParam, x), Any[A, B, C, D])
+
+        # at least make sure things line up on initial value of param
+        @assert size(A[1], 1) == size(B[1], 1)
+        @assert size(C[1], 1) == size(D[1], 1)
+        @assert size(C[1], 2) == size(A[1], 1)
         return new(A, B, C, D)
     end
 end
@@ -73,7 +77,7 @@ immutable KFstep
     x_f::AbstractVector{Float64}  # updated (filtered) state
     P_f::AbstractMatrix{Float64}  # updated (filtered) cov
     y_t::AbstractVector{Float64}  # data for this step
-    ll::Float64           # log-likelihood of this step
+    ll::Float64                   # log-likelihood of this step
 end
 
 ## ------------------ ##
@@ -84,7 +88,7 @@ end
 _get_x0_P0(x::MvNormal) = (mean(x), cov(x))
 _get_x0_P0(x::AbstractVector) = (x, eye(length(x)))
 
-function _get_T_ny_fixy(m::LinearGaussianSSabcd, y)
+function _get_T_ny_fixy(m::LinearGaussianSSabcd, y::AbstractMatrix)
     # y should have observations as columns
     T = size(y, 2)
     ny = size(y, 1)
@@ -98,8 +102,47 @@ function _get_T_ny_fixy(m::LinearGaussianSSabcd, y)
     return y, T, ny
 end
 
-_get_yt(y::Array, t::Int) = y[:, t]
-_get_yt(y::TimeVaryingParam, t) = y[t]
+function _get_T_ny_fixy(m::LinearGaussianSSabcd, y::AbstractMatrix)
+    # y should have observations as columns
+    T = size(y, 2)
+    ny = size(y, 1)
+    ny_model = size(m.C[1], 1)
+
+    if ny_model != ny
+        T, ny = ny, T
+        y = y'
+    end
+
+    return y, T, ny
+end
+
+function _get_T_ny_fixy(m::LinearGaussianSSabcd, y::TimeVaryingParam)
+    #=
+    NOTES
+
+    * The third argument probably isn't accurate. If user passed in a
+      TimeVaryingParam, y probably isn't constant dimensionality (otherwise
+      we should just use a Matrix)
+    * length(TimeVaryingParam) is a dangerous way to compute the number
+      of observations because if we `convert` a constant to a
+      TimeVaryingParam the range is 1:typemax(1). This would be huge! We
+      should not have that problem here because the observed data should
+      be non-constant. I guard against this and make sure we don't
+      return an obscenely large T
+    =#
+
+    if length(y.vals) == 1
+        msg = "kfilter: Cannot pass a 'constant' TimeVaryingParam as "
+        msg *= "\nobserved data"
+        throw(ArgumentError(msg))
+    end
+
+    return y, length(y), length(y[1])
+end
+
+## ------------- ##
+#- Kalman Filter -#
+## ------------- ##
 
 function kfilter_step(m::LinearGaussianSSabcd,
                       x::AbstractVector,
