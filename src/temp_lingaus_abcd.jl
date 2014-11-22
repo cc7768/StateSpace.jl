@@ -1,5 +1,3 @@
-using Distributions
-
 ## -------------------------- ##
 #- type: LinearGaussianSSabcd -#
 ## -------------------------- ##
@@ -203,6 +201,34 @@ function kfilter(m::LinearGaussianSSabcd,
 end
 
 loglik(s::AbstractVector{KFstep}) = sum([x.ll for x in s])
+
+function FilteredState(kfsteps::Vector{KFstep})
+    try
+        # if all elements of y_t are similar this will output a matrix
+        obs = hcat([s.y_t for s in kfsteps]...)
+    catch
+        # otherwise we need to do it the long way and output a
+        # TimeVaryingParam
+        tt = (Vector{Float64}, UnitRange{Int})
+        obs = TimeVaryingParam(tt[(kfsteps[t].y_t, t:t)
+                                  for t=1:length(kfsteps)]...)
+    end
+    state_dist = [MvNormal(s.x_f, s.P_f) for s in kfsteps]
+    pred_state = [MvNormal(s.x_p, s.P_p) for s in kfsteps]
+    ll = loglik(kfsteps)
+    FilteredState(obs, state_dist, pred_state, ll)
+end
+
+## --------------------------------- ##
+#- Forward filter - backward sampler -#
+## --------------------------------- ##
+
+# bw_sampler(fs::FilteredState) is defined in KalmanFilter.jl
+bw_sampler(ksteps::Vector{KFstep}) = bw_sampler(FilteredState(ksteps))
+
+function fwfilter_bwsampler(m::LinearGaussianSSabcd, y, x0::MvNormal)
+    return bw_sampler(kfilter(m, y, x0))
+end
 
 ## --------------- ##
 #- Particle filter -#
