@@ -110,19 +110,18 @@ function kfilter_step(m::LinearGaussianSSabcd,
     A, B, C, D = m.A, m.B, m.C, m.D
 
     # prediction
-    x_p = A[t]*x                      # predict state
-    P_p = A[t]*P*A[t]' + B[t]B[t]'    # predicted covariance
+    x_p = A[t]*x                           # predict state
+    P_p = A[t]*P*A[t]' + B[t]*B[t]'        # predicted covariance
 
     # observation
-    yhat = C[t]*x                     # predicted obs
-    y_tilde = y_t - yhat              # innovation
-    V = C[t]*P_p*C[t]' + D[t]*D[t]'   # innovation cov
+    yhat = C[t]*x_p                        # predicted obs
+    y_tilde = y_t - yhat                   # innovation
+    V = C[t]*P_p*C[t]' + D[t]*D[t]'        # innovation cov
 
     # update
-    V_inv = inv(V)                    # don't repeat computing V^{-1}
-    PT_CT_Vinv = P_p'*C[t]'*V_inv     # useful object
-    x_f = x_p + PT_CT_Vinv*y_tilde    # updated state
-    P_f = P_p - PT_CT_Vinv*C[t]*P_p   # Update covariance
+    V_inv = inv(V)                         # don't repeat computing V^{-1}
+    x_f = x_p + P_p*C[t]'*V_inv*y_tilde    # updated state
+    P_f = P_p - P_p'*C[t]'*V_inv*C[t]*P_p  # Update covariance
 
     # compute log-likelihood for this step
     ll = logpdf(MvNormal(yhat, V), y_t)
@@ -132,9 +131,11 @@ function kfilter_step(m::LinearGaussianSSabcd,
 end
 
 
-function kfilter(m::LinearGaussianSSabcd, y, x0)
+function kfilter(m::LinearGaussianSSabcd,
+                 y::Union(AbstractMatrix, TimeVaryingParam),
+                 x0::Union(AbstractVector, MvNormal))
     # Make sure y has obs in columns. Compute number obs and dim(y)
-    y, T, ny = _get_T_ny_fixy(m, y)
+    y, T, _ = _get_T_ny_fixy(m, y)
 
     # compute the initial state and covariance
     x, P = _get_x0_P0(x0)
@@ -147,7 +148,7 @@ function kfilter(m::LinearGaussianSSabcd, y, x0)
     filtered = Array(KFstep, T)
 
     # fill first observation
-    filtered[1] = kfilter_step(m, x, P, 1, y[:, 1])
+    filtered[1] = kfilter_step(m, x, P, 1, _get_yt(y, 1))
 
     # run the filter for the rest of the periods
     for t=2:T
