@@ -146,7 +146,8 @@ function kfilter_step(m::LinearGaussianSSabcd,
                       x::AbstractVector,
                       P::AbstractMatrix,
                       t::Int,
-                      y_t)
+                      y_t;
+                      compute_ll::Bool=true)
     # unpack model parameters
     A, B, C, D = m.A, m.B, m.C, m.D
 
@@ -160,12 +161,16 @@ function kfilter_step(m::LinearGaussianSSabcd,
     V = C[t]*P_p*C[t]' + D[t]*D[t]'        # innovation cov
 
     # update
-    V_inv = inv(V)                         # don't repeat computing V^{-1}
-    x_f = x_p + P_p*C[t]'*V_inv*y_tilde    # updated state
-    P_f = P_p - P_p'*C[t]'*V_inv*C[t]*P_p  # Update covariance
+    # V_inv = inv(V)                         # don't repeat computing V^{-1}
+    x_f = x_p + P_p*C[t]'*(V\y_tilde)    # updated state
+    P_f = (I - P_p*C[t]'*(V\C[t]))*P_p   # Update covariance
 
-    # compute log-likelihood for this step
-    ll = logpdf(MvNormal(yhat, V), y_t)
+    # if called for, compute log-likelihood for this step
+    if compute_ll
+        ll = logpdf(MvNormal(yhat, V), y_t)
+    else
+        ll = NaN
+    end
 
     # _p variables are for prediction, _f for filtered
     return KFstep(x_p, P_p, x_f, P_f, y_t, ll)
@@ -174,7 +179,8 @@ end
 
 function kfilter(m::LinearGaussianSSabcd,
                  y::Union(AbstractMatrix, TimeVaryingParam),
-                 x0::Union(AbstractVector, MvNormal))
+                 x0::Union(AbstractVector, MvNormal);
+                 compute_ll::Bool=true)
     # Make sure y has obs in columns. Compute number obs and dim(y)
     y, T, _ = _get_T_ny_fixy(m, y)
 
@@ -189,13 +195,14 @@ function kfilter(m::LinearGaussianSSabcd,
     filtered = Array(KFstep, T)
 
     # fill first observation
-    filtered[1] = kfilter_step(m, x, P, 1, _get_yt(y, 1))
+    filtered[1] = kfilter_step(m, x, P, 1, _get_yt(y, 1),
+                               compute_ll=compute_ll)
 
     # run the filter for the rest of the periods
     for t=2:T
         y_t = _get_yt(y, t)  # this period's observation
         x, P = filtered[t-1].x_f, filtered[t-1].P_f  # Prev updated state/cov
-        filtered[t] = kfilter_step(m, x, P, t, y_t)
+        filtered[t] = kfilter_step(m, x, P, t, y_t, compute_ll=compute_ll)
     end
     filtered
 end
@@ -203,6 +210,7 @@ end
 loglik(s::AbstractVector{KFstep}) = sum([x.ll for x in s])
 
 function FilteredState(kfsteps::Vector{KFstep})
+    obs = nothing  # just declare out here so it persists beyond the try/catch
     try
         # if all elements of y_t are similar this will output a matrix
         obs = hcat([s.y_t for s in kfsteps]...)
@@ -224,10 +232,38 @@ end
 ## --------------------------------- ##
 
 # bw_sampler(fs::FilteredState) is defined in KalmanFilter.jl
-bw_sampler(ksteps::Vector{KFstep}) = bw_sampler(FilteredState(ksteps))
+function bw_sampler(m::LinearGaussianSSabcd, kfstates::Vector{KFstep})
+    A = m.A
+    nx = size(A[1], 1)
+    T = length(kfstates)
+    samples = Array(Float64, nx, T)
+    samples[:, T] = kfstates[T].x_f + real(sqrtm(kfstates[T].P_f))*randn(nx)
+
+    # iterate backwards to get samples T-1:-1:1
+    for t=T-1:-1:1
+        s = kfstates[t]
+        S0, P0, P1 = s.x_f, s.P_f, s.P_p
+
+        foo = P0*A[t]'*inv(P1)  # useful object
+
+        # S_{t|t+1}=S_{t|t} + P_{t|t}A_t'P_{t+1|t}^{-1}(S_{t+1} - A_t S_{t|t})
+        SM = S0 + foo*(samples[:, t+1] - A[t]*S0)
+
+        # P_{t|t+1} =(I - P_{t|t}A_t'P_{t+1|t}^{-1}A_t) P_{t|t}
+        PM = (I - foo*A[t])*P0
+
+        # Sample from this conditional distribution
+        try
+            samples[:, t] = rand(MvNormal(SM, PM))
+        catch
+            samples[:, t] = SM + real(sqrtm(PM))*randn(nx)
+        end
+    end
+    samples
+end
 
 function fwfilter_bwsampler(m::LinearGaussianSSabcd, y, x0::MvNormal)
-    return bw_sampler(kfilter(m, y, x0))
+    return bw_sampler(m, kfilter(m, y, x0, compute_ll=false))
 end
 
 ## --------------- ##
@@ -268,7 +304,8 @@ function pfilter(m::LinearGaussianSSabcd, y, x0::MvNormal;
 
         # Move cloud forward and compute probability of each event
         xtwiddle[:, :] = A[t]*filtered_x[:, :, t] + B[t]*randn(nx_eps, cloudsize)
-        proby_x[:] = det_J*pdf(randY, Dt_inv*(y_t .- C[t]*xtwiddle))
+        vest = Dt_inv*(y_t .- C[t]*xtwiddle)
+        proby_x[:] = det_J*pdf(randY, vest)
 
         # Normalize Weights
         probx_y_sum = sum(proby_x)

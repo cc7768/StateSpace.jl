@@ -79,8 +79,14 @@ function getindex(tvp::TimeVaryingParam, t::Int)
     end
 
     # b/c all ranges are disjoint, ind has exactly zero or one elements
-    ind = find(x->t in x, tvp.ranges)
-    isempty(ind) && error("Invalid index. t=$t not in any supplied ranges")
+    ind = 0
+    for (counter, r) in enumerate(tvp.ranges)
+        if t >= first(r) && t <= last(r)
+            ind = counter
+            break
+        end
+    end
+    ind == 0 && error("Invalid index. t=$t not in any supplied ranges")
     return tvp.vals[ind[1]]
 end
 
