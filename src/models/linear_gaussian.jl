@@ -16,9 +16,9 @@ type LinearGaussianSSM
         @assert issquare(F)
         @assert issquare(V)
         @assert issquare(W)
-        @assert size(F) == size(V)
-        @assert size(G, 1) == size(W, 1)
         F, V, G, W = map(x->convert(TimeVaryingParam, x), Any[F, V, G, W])
+        @assert size(F[1]) == size(V[1])
+        @assert size(G[1], 1) == size(W[1], 1)
         return new(F, V, G, W)
     end
 end
