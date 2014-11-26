@@ -73,9 +73,8 @@ end
 
 # TODO: should this function return the samples, or the distributions?
 #       I kinda think it should return distributions. Need to think about it
-function bw_sampler(m::LinearGaussianSSM, fs::FilteredState)
+function bw_sampler(fs::FilteredState)
     # pull out necessary objects
-    F = m.F
     filt, pred = fs.state_dist, fs.pred_state
     T = length(filt)      # number of samples
     ns = length(filt[1])  # number of states
@@ -92,14 +91,11 @@ function bw_sampler(m::LinearGaussianSSM, fs::FilteredState)
         xt_t, pt_t = mean(filt[t]), cov(filt[t])
         ptp1_t_inv = inv(cov(pred[t+1]))  # CHASE: Check this index please
 
-        # P_{t|t}A_t'P_{t+1|t}^{-1}  - A useful constant
-        PM = pt_t*F[t]'*inv(ptp1_t_inv)
+        # x_{t|t+1} = x_{t|t} + P_{t|t}P_{t+1|t}^{-1}(x_{t+1} - x_{t|t})
+        xt_tp1 = xt_t + pt_t*ptp1_t_inv*(x_sample[:, t+1] - xt_t)
 
-        # x_{t|t+1}=x_{t|t} + P_{t|t}A_t'P_{t+1|t}^{-1}(x_{t+1} - A_t x_{t|t})
-        xt_tp1 = xt_t + PM*(x_sample[:, t+1] - F[t]*xt_t)
-
-        # P_{t|t+1} = (I - P_{t|t}A_t'P_{t+1|t}^{-1}A_t) P_{t|t}
-        pt_tp1 = (I - PM*F[t])*pt_t
+        # P_{t|t+1} = P_{t|t} - P_{t|t}P_{t+1|t}^{-1}P_{t|t}
+        pt_tp1 = pt_t - pt_t'ptp1_t_inv*pt_t
 
         # construct distribution and sample
         new_dist = MvNormal(xt_tp1, pt_tp1)
@@ -136,6 +132,6 @@ function smooth(m::LinearGaussianSSM, fs::FilteredState)
 end
 
 function smooth(y::Array, m::LinearGaussianSSM, x0::MvNormal)
-	fs = filter(y, m, x0)
-	return smooth(m, fs)
+    fs = filter(y, m, x0)
+    return smooth(m, fs)
 end
